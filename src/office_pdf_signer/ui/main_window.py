@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import html
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSettings, QSize, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, QSettings, QSize, QSizeF, Qt, QTimer
 from PySide6.QtGui import QAction, QFont, QFontMetricsF, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSplitter,
     QStatusBar,
+    QTextEdit,
     QToolButton,
     QHBoxLayout,
     QVBoxLayout,
@@ -136,9 +138,14 @@ class ZoomPercentDialog(QDialog):
 
 class MainWindow(QMainWindow):
     _PAGE_PANEL_WIDTH = 190
+    _PROPERTIES_PANEL_WIDTH = 320
     _FIT_MODE_PAGE = "page"
     _FIT_MODE_WIDTH = "width"
     _FIT_MODE_HEIGHT = "height"
+    _TEXT_ANNOTATION_MIN_WIDTH = 80.0
+    _TEXT_ANNOTATION_HORIZONTAL_PADDING = 16.0
+    _TEXT_ANNOTATION_VERTICAL_PADDING = 10.0
+    _TEXT_ANNOTATION_RIGHT_MARGIN = 12.0
 
     def __init__(self) -> None:
         super().__init__()
@@ -277,8 +284,11 @@ class MainWindow(QMainWindow):
         page_panel.setMaximumWidth(self._PAGE_PANEL_WIDTH)
         self._splitter.addWidget(page_panel)
         self._splitter.addWidget(self._build_viewer_panel())
-        self._splitter.addWidget(self._build_properties_panel())
-        self._splitter.setSizes([self._PAGE_PANEL_WIDTH, 900, 280])
+        properties_panel = self._build_properties_panel()
+        properties_panel.setMinimumWidth(self._PROPERTIES_PANEL_WIDTH)
+        properties_panel.setMaximumWidth(self._PROPERTIES_PANEL_WIDTH)
+        self._splitter.addWidget(properties_panel)
+        self._splitter.setSizes([self._PAGE_PANEL_WIDTH, 900, self._PROPERTIES_PANEL_WIDTH])
         self._splitter.handle(1).setEnabled(False)
         self._splitter.handle(1).setCursor(Qt.ArrowCursor)
         root_layout.addWidget(self._splitter, 1)
@@ -318,7 +328,7 @@ class MainWindow(QMainWindow):
     def _build_page_list(self) -> QWidget:
         container = QWidget(self)
         container.setObjectName("pagePanel")
-        container.setStyleSheet("background: #252526;")
+        container.setStyleSheet("background: #33373d;")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(8, 16, 4, 16)
         layout.setSpacing(10)
@@ -327,13 +337,13 @@ class MainWindow(QMainWindow):
         self._page_list = ThumbnailListWidget(container)
         self._page_list.setStyleSheet(
             """
-            background: #2a2d2e;
+            background: #34393f;
             border: none;
             outline: none;
             padding: 0px;
             """
         )
-        self._page_list.viewport().setStyleSheet("background: #2a2d2e;")
+        self._page_list.viewport().setStyleSheet("background: #34393f;")
         self._page_list.currentRowChanged.connect(self._handle_page_selected)
         self._page_list.itemClicked.connect(
             lambda item: self._handle_page_selected(self._page_list.row(item))
@@ -342,7 +352,7 @@ class MainWindow(QMainWindow):
         list_card = self._make_panel_card(container)
         list_card.setObjectName("pageListCard")
         list_card.setStyleSheet(
-            "background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;"
+            "background: #34393f; border: 1px solid #3c3c3c; border-radius: 8px;"
         )
         list_layout = QVBoxLayout(list_card)
         list_layout.setContentsMargins(0, 4, 0, 4)
@@ -409,6 +419,7 @@ class MainWindow(QMainWindow):
 
     def _build_properties_panel(self) -> QWidget:
         container = QWidget(self)
+        container.setObjectName("propertiesPanel")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(14, 16, 16, 16)
         layout.setSpacing(12)
@@ -419,7 +430,7 @@ class MainWindow(QMainWindow):
         info_card = self._make_panel_card(container)
         info_layout = QVBoxLayout(info_card)
         info_layout.setContentsMargins(14, 14, 14, 14)
-        info_layout.setSpacing(10)
+        info_layout.setSpacing(12)
         self._selection_hint = QLabel(
             "Use Text, Date, or Signature to place a new item.\n"
             "Drag an existing annotation to reposition it.",
@@ -427,14 +438,20 @@ class MainWindow(QMainWindow):
         )
         self._selection_hint.setObjectName("hintText")
         self._selection_hint.setWordWrap(True)
+        self._hint_divider = self._make_divider(info_card)
         self._selection_summary = QLabel(info_card)
         self._selection_summary.setWordWrap(True)
         self._selection_summary.setObjectName("summaryCard")
+        self._summary_divider = self._make_divider(info_card)
         self._text_value_label = QLabel("Text", info_card)
         self._text_value_label.setObjectName("fieldLabel")
-        self._text_value_input = QLineEdit(info_card)
+        self._text_value_input = QTextEdit(info_card)
+        self._text_value_input.setObjectName("textValueInput")
         self._text_value_input.setPlaceholderText("Selected text")
-        self._text_value_input.textEdited.connect(self._apply_text_value_change)
+        self._text_value_input.setAcceptRichText(False)
+        self._text_value_input.setFixedHeight(128)
+        self._text_value_input.textChanged.connect(self._handle_text_value_changed)
+        self._font_divider = self._make_divider(info_card)
         self._font_size_label = QLabel("Font Size", info_card)
         self._font_size_label.setObjectName("fieldLabel")
         self._font_size_input = IntStepper(8, 72, step=1, suffix=" pt", parent=info_card)
@@ -442,9 +459,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
         info_layout.addWidget(self._selection_hint)
+        info_layout.addWidget(self._hint_divider)
         info_layout.addWidget(self._selection_summary)
+        info_layout.addWidget(self._summary_divider)
         info_layout.addWidget(self._text_value_label)
         info_layout.addWidget(self._text_value_input)
+        info_layout.addWidget(self._font_divider)
         info_layout.addWidget(self._font_size_label)
         info_layout.addWidget(self._font_size_input)
         layout.addWidget(info_card)
@@ -461,6 +481,13 @@ class MainWindow(QMainWindow):
         card.setFrameShape(QFrame.StyledPanel)
         return card
 
+    def _make_divider(self, parent: QWidget) -> QFrame:
+        divider = QFrame(parent)
+        divider.setObjectName("panelDivider")
+        divider.setFrameShape(QFrame.HLine)
+        divider.setFrameShadow(QFrame.Plain)
+        return divider
+
     def _apply_window_style(self) -> None:
         assets_dir = Path(__file__).resolve().parent / "assets"
         spin_up_icon = assets_dir.joinpath("spin_up.svg").as_posix()
@@ -472,7 +499,7 @@ class MainWindow(QMainWindow):
                 color: #d4d4d4;
             }}
             QWidget#topMenuStrip {{
-                background: #2d2d30;
+                background: #34373d;
                 border-bottom: 1px solid #3c3c3c;
             }}
             QToolButton#topMenuButton {{
@@ -526,15 +553,18 @@ class MainWindow(QMainWindow):
                 font-size: 12px;
             }}
             QFrame#panelCard {{
-                background: #252526;
+                background: #31353a;
                 border: 1px solid #3c3c3c;
                 border-radius: 8px;
             }}
             QWidget#pagePanel {{
-                background: #252526;
+                background: #33373d;
+            }}
+            QWidget#propertiesPanel {{
+                background: #33373d;
             }}
             QFrame#pageListCard {{
-                background: #2d2d30;
+                background: #34393f;
                 border: 1px solid #3c3c3c;
                 border-radius: 8px;
             }}
@@ -544,7 +574,7 @@ class MainWindow(QMainWindow):
                 line-height: 1.4;
             }}
             QLabel#summaryCard {{
-                background: #1e1e1e;
+                background: #262a30;
                 border: 1px solid #3c3c3c;
                 border-radius: 10px;
                 padding: 10px 12px;
@@ -554,9 +584,15 @@ class MainWindow(QMainWindow):
                 font-size: 12px;
                 font-weight: 600;
                 color: #9da5b4;
-                margin-top: 4px;
+                margin-top: 0px;
             }}
-            QLineEdit, QSpinBox, QAbstractSpinBox, QDialog {{
+            QFrame#panelDivider {{
+                min-height: 1px;
+                max-height: 1px;
+                background: #3c3c3c;
+                border: none;
+            }}
+            QLineEdit, QTextEdit, QSpinBox, QAbstractSpinBox, QDialog {{
                 background: #1e1e1e;
                 border: 1px solid #3c3c3c;
                 border-radius: 8px;
@@ -565,7 +601,7 @@ class MainWindow(QMainWindow):
                 color: #d4d4d4;
                 selection-background-color: #094771;
             }}
-            QLineEdit:focus, QSpinBox:focus, QAbstractSpinBox:focus {{
+            QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QAbstractSpinBox:focus {{
                 border: 1px solid #0e639c;
             }}
             QLineEdit#stepperEdit {
@@ -575,6 +611,54 @@ class MainWindow(QMainWindow):
                 padding: 7px 10px;
                 color: #d4d4d4;
                 min-width: 52px;
+            }
+            QDialog#textInputDialog {
+                background: #252526;
+                border: 1px solid #3c3c3c;
+                border-radius: 10px;
+            }
+            QDialog#textInputDialog QLabel#fieldLabel {
+                color: #c2cfdd;
+                font-size: 12px;
+                font-weight: 600;
+                padding: 0;
+                margin: 0;
+                border: none;
+                background: transparent;
+            }
+            QDialog#textInputDialog QTextEdit#textValueInput {
+                background: #1b1d21;
+                border: 1px solid #4a5563;
+                border-radius: 8px;
+                color: #e6edf3;
+                padding: 10px 12px;
+            }
+            QDialog#textInputDialog QTextEdit#textValueInput:focus {
+                background: #181a1d;
+                border: 1px solid #1f8ad2;
+            }
+            QDialog#textInputDialog QDialogButtonBox {
+                background: #2a2d2e;
+                border-top: 1px solid #3c3c3c;
+                padding-top: 10px;
+            }
+            QDialog#textInputDialog QPushButton {
+                background: #31353a;
+                border: 1px solid #4a5563;
+                border-radius: 8px;
+                color: #d4dbe3;
+                padding: 6px 16px;
+                min-width: 78px;
+            }
+            QDialog#textInputDialog QPushButton:hover {
+                background: #0b3f64;
+                border: 1px solid #1f8ad2;
+            }
+            QDialog#textInputDialog QPushButton:pressed {
+                background: #0e639c;
+            }
+            QTextEdit#textValueInput {
+                padding: 8px 10px;
             }
             QPushButton#stepperButton {
                 background: #2d2d30;
@@ -882,18 +966,27 @@ class MainWindow(QMainWindow):
         if self._document is None:
             return
         dialog = QDialog(self)
+        dialog.setObjectName("textInputDialog")
         dialog.setWindowTitle("Add Text")
+        dialog.resize(420, 220)
         dialog_layout = QVBoxLayout(dialog)
-        dialog_layout.addWidget(QLabel("Text:", dialog))
-        text_input = QLineEdit(dialog)
+        dialog_layout.setContentsMargins(14, 14, 14, 14)
+        dialog_layout.setSpacing(10)
+        prompt = QLabel("Text", dialog)
+        prompt.setObjectName("fieldLabel")
+        dialog_layout.addWidget(prompt)
+        text_input = QTextEdit(dialog)
+        text_input.setObjectName("textValueInput")
+        text_input.setAcceptRichText(False)
+        text_input.setFixedHeight(120)
         dialog_layout.addWidget(text_input)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, dialog)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         dialog_layout.addWidget(buttons)
-        if dialog.exec() != QDialog.Accepted or not text_input.text().strip():
+        if dialog.exec() != QDialog.Accepted or not text_input.toPlainText().strip():
             return
-        value = text_input.text().strip()
+        value = text_input.toPlainText().strip()
         self._viewer.begin_annotation_placement(
             lambda page_index, point: self._make_text_annotation(page_index, point, value, "text")
         )
@@ -1005,19 +1098,57 @@ class MainWindow(QMainWindow):
         kind: str,
     ) -> Annotation:
         font_size = 14.0
-        width = self._measure_text_annotation_width(text, font_size)
-        height = font_size * 1.8
+        size = self._measure_text_annotation_size(text, font_size, page_index, point.x())
+        width = size.width()
+        height = size.height()
         rect = QRectF(point.x(), point.y(), width, height)
         if kind == "date":
             return Annotation.make_date(page_index, rect, text, font_size)
         return Annotation.make_text(page_index, rect, text, font_size)
 
-    def _measure_text_annotation_width(self, text: str, font_size: float) -> float:
+    def _measure_text_annotation_size(
+        self,
+        text: str,
+        font_size: float,
+        page_index: int,
+        x_position: float,
+        preferred_width: float | None = None,
+    ) -> QSizeF:
         font = QFont("Segoe UI")
         font.setPointSizeF(font_size)
         metrics = QFontMetricsF(font)
-        text_width = metrics.horizontalAdvance(text or " ")
-        return max(80.0, text_width + max(16.0, font_size * 0.75))
+        page_width = self._page_summaries[page_index].width
+        available_width = max(
+            page_width - x_position - self._TEXT_ANNOTATION_RIGHT_MARGIN,
+            self._TEXT_ANNOTATION_MIN_WIDTH,
+        )
+        natural_width = max(
+            self._TEXT_ANNOTATION_MIN_WIDTH,
+            metrics.horizontalAdvance(text or " ")
+            + self._TEXT_ANNOTATION_HORIZONTAL_PADDING,
+        )
+        if preferred_width is None:
+            width = min(natural_width, available_width)
+        else:
+            width = min(
+                max(preferred_width, self._TEXT_ANNOTATION_MIN_WIDTH),
+                available_width,
+            )
+        text_box = metrics.boundingRect(
+            QRectF(
+                0.0,
+                0.0,
+                max(width - self._TEXT_ANNOTATION_HORIZONTAL_PADDING, 1.0),
+                10000.0,
+            ),
+            Qt.TextWordWrap,
+            text or " ",
+        )
+        height = max(
+            font_size * 1.8,
+            text_box.height() + self._TEXT_ANNOTATION_VERTICAL_PADDING,
+        )
+        return QSizeF(width, height)
 
     def _make_signature_annotation(
         self,
@@ -1068,6 +1199,8 @@ class MainWindow(QMainWindow):
             self._selection_summary.setText("No annotation selected.")
             self._text_value_label.hide()
             self._text_value_input.hide()
+            self._summary_divider.hide()
+            self._font_divider.hide()
             self._font_size_label.hide()
             self._font_size_input.hide()
             self._updating_properties = False
@@ -1075,29 +1208,36 @@ class MainWindow(QMainWindow):
         annotation = self._selected_annotation
         if annotation.kind == "signature":
             summary = (
-                f"Type: Signature\n"
-                f"Page: {annotation.page_index + 1}\n"
-                f"Size: {int(annotation.rect.width())} x {int(annotation.rect.height())}"
+                f"<b>Type:</b> Signature<br>"
+                f"<b>Page:</b> {annotation.page_index + 1}<br>"
+                f"<b>Size:</b> {int(annotation.rect.width())} x {int(annotation.rect.height())}"
             )
+            self._summary_divider.hide()
+            self._font_divider.hide()
             self._text_value_label.hide()
             self._text_value_input.hide()
             self._font_size_label.hide()
             self._font_size_input.hide()
         else:
             summary = (
-                f"Type: {annotation.kind.title()}\n"
-                f"Page: {annotation.page_index + 1}\n"
-                f"Text: {annotation.text}\n"
-                f"Size: {int(annotation.rect.width())} x {int(annotation.rect.height())}"
+                f"<b>Type:</b> {html.escape(annotation.kind.title())}<br>"
+                f"<b>Page:</b> {annotation.page_index + 1}<br>"
+                f"<b>Text:</b> {html.escape(annotation.text)}<br>"
+                f"<b>Size:</b> {int(annotation.rect.width())} x {int(annotation.rect.height())}"
             )
+            self._summary_divider.show()
+            self._font_divider.show()
             self._text_value_label.show()
             self._text_value_input.show()
             self._font_size_label.show()
             self._font_size_input.show()
-            self._text_value_input.setText(annotation.text)
+            self._text_value_input.setPlainText(annotation.text)
             self._font_size_input.setValue(int(round(annotation.font_size)))
         self._selection_summary.setText(summary)
         self._updating_properties = False
+
+    def _handle_text_value_changed(self) -> None:
+        self._apply_text_value_change(self._text_value_input.toPlainText())
 
     def _apply_text_value_change(self, value: str) -> None:
         if self._updating_properties or self._selected_annotation is None:
@@ -1105,9 +1245,15 @@ class MainWindow(QMainWindow):
         if self._selected_annotation.kind not in {"text", "date"}:
             return
         self._selected_annotation.text = value
-        self._selected_annotation.rect.setWidth(
-            self._measure_text_annotation_width(value, self._selected_annotation.font_size)
+        size = self._measure_text_annotation_size(
+            value,
+            self._selected_annotation.font_size,
+            self._selected_annotation.page_index,
+            self._selected_annotation.rect.x(),
+            self._selected_annotation.rect.width(),
         )
+        self._selected_annotation.rect.setWidth(size.width())
+        self._selected_annotation.rect.setHeight(size.height())
         self._mark_unsaved_changes()
         self._viewer.refresh_annotations()
         self._update_selection_summary()
@@ -1118,13 +1264,15 @@ class MainWindow(QMainWindow):
         if self._selected_annotation.kind not in {"text", "date"}:
             return
         self._selected_annotation.font_size = float(value)
-        self._selected_annotation.rect.setWidth(
-            self._measure_text_annotation_width(
-                self._selected_annotation.text,
-                self._selected_annotation.font_size,
-            )
+        size = self._measure_text_annotation_size(
+            self._selected_annotation.text,
+            self._selected_annotation.font_size,
+            self._selected_annotation.page_index,
+            self._selected_annotation.rect.x(),
+            self._selected_annotation.rect.width(),
         )
-        self._selected_annotation.rect.setHeight(self._selected_annotation.font_size * 1.8)
+        self._selected_annotation.rect.setWidth(size.width())
+        self._selected_annotation.rect.setHeight(size.height())
         self._mark_unsaved_changes()
         self._viewer.refresh_annotations()
         self._update_selection_summary()

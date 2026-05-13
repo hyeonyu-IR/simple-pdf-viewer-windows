@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QMouseEvent, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from office_pdf_signer.annotations.models import Annotation
@@ -14,6 +14,10 @@ class PageCanvas(QWidget):
     annotation_selected = Signal(object)
     annotation_added = Signal(object)
     annotation_changed = Signal(object)
+    _TEXT_MIN_WIDTH = 80.0
+    _TEXT_HORIZONTAL_PADDING = 16.0
+    _TEXT_VERTICAL_PADDING = 10.0
+    _TEXT_RIGHT_MARGIN = 12.0
 
     def __init__(
         self,
@@ -83,7 +87,7 @@ class PageCanvas(QWidget):
             annotation = self._find_annotation(self._resizing_annotation_id)
             if annotation is None:
                 return
-            self._resize_signature_annotation(annotation, event.position())
+            self._resize_annotation(annotation, event.position())
             self.annotation_selected.emit(annotation)
             self.update()
             return
@@ -138,7 +142,17 @@ class PageCanvas(QWidget):
             font = QFont("Segoe UI", max(8, int(annotation.font_size * self._zoom)))
             painter.setFont(font)
             painter.setPen(QColor("#0f1720"))
-            painter.drawText(rect, Qt.AlignLeft | Qt.AlignVCenter, annotation.text)
+            text_rect = rect.adjusted(
+                4.0 * self._zoom,
+                2.0 * self._zoom,
+                -4.0 * self._zoom,
+                -2.0 * self._zoom,
+            )
+            painter.drawText(
+                text_rect,
+                Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
+                annotation.text,
+            )
         elif annotation.kind == "signature" and annotation.image is not None:
             painter.drawImage(rect, annotation.image)
 
@@ -148,7 +162,7 @@ class PageCanvas(QWidget):
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(rect)
-            if annotation.kind == "signature":
+            if annotation.kind in {"signature", "text"}:
                 handle = self._resize_handle_rect(rect)
                 painter.fillRect(handle, QColor("#2470ff"))
 
@@ -186,7 +200,7 @@ class PageCanvas(QWidget):
         )
 
     def _is_resize_handle_hit(self, annotation: Annotation, widget_pos: QPointF) -> bool:
-        if annotation.kind != "signature" or annotation.id != self._selected_annotation_id:
+        if annotation.kind not in {"signature", "text"} or annotation.id != self._selected_annotation_id:
             return False
         return self._resize_handle_rect(self._page_to_widget_rect(annotation.rect)).contains(widget_pos)
 
@@ -198,6 +212,12 @@ class PageCanvas(QWidget):
             handle_size,
             handle_size,
         )
+
+    def _resize_annotation(self, annotation: Annotation, widget_pos: QPointF) -> None:
+        if annotation.kind == "text":
+            self._resize_text_annotation(annotation, widget_pos)
+            return
+        self._resize_signature_annotation(annotation, widget_pos)
 
     def _resize_signature_annotation(self, annotation: Annotation, widget_pos: QPointF) -> None:
         if annotation.image is None:
@@ -221,6 +241,53 @@ class PageCanvas(QWidget):
             height *= scale
 
         annotation.rect = QRectF(top_left.x(), top_left.y(), max(width, 24.0), max(height, 12.0))
+
+    def _resize_text_annotation(self, annotation: Annotation, widget_pos: QPointF) -> None:
+        top_left = annotation.rect.topLeft()
+        page_point = self._widget_to_page(widget_pos)
+        page_width = self._page_summary.width
+        available_width = max(
+            page_width - top_left.x() - self._TEXT_RIGHT_MARGIN,
+            self._TEXT_MIN_WIDTH,
+        )
+        target_width = min(
+            max(page_point.x() - top_left.x(), self._TEXT_MIN_WIDTH),
+            available_width,
+        )
+        size = self._measure_text_annotation_size(
+            annotation.text,
+            annotation.font_size,
+            target_width,
+        )
+        annotation.rect = self._clamp_rect(
+            QRectF(top_left.x(), top_left.y(), size.width(), size.height())
+        )
+
+    def _measure_text_annotation_size(
+        self,
+        text: str,
+        font_size: float,
+        width: float,
+    ) -> QRectF:
+        font = QFont("Segoe UI")
+        font.setPointSizeF(font_size)
+        metrics = QFontMetricsF(font)
+        wrapped_text = text or " "
+        text_box = metrics.boundingRect(
+            QRectF(
+                0.0,
+                0.0,
+                max(width - self._TEXT_HORIZONTAL_PADDING, 1.0),
+                10000.0,
+            ),
+            Qt.TextWordWrap,
+            wrapped_text,
+        )
+        height = max(
+            font_size * 1.8,
+            text_box.height() + self._TEXT_VERTICAL_PADDING,
+        )
+        return QRectF(0.0, 0.0, width, height)
 
 
 class PdfViewer(QWidget):
