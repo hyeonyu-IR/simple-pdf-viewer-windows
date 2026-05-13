@@ -711,10 +711,11 @@ class MainWindow(QMainWindow):
     def open_pdf(self) -> None:
         if not self._confirm_discard_unsaved_changes("open another PDF"):
             return
+        start_dir = self._pdf_start_dir()
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open PDF",
-            str(Path.home()),
+            str(start_dir),
             "PDF Files (*.pdf)",
         )
         if file_path:
@@ -744,8 +745,24 @@ class MainWindow(QMainWindow):
         self._viewer.set_document(self._document, self._page_summaries)
         self._update_action_state()
         self._settings.setValue("document/last_opened_file", str(pdf_path))
+        self._settings.setValue("document/last_directory", str(pdf_path.parent))
         self._fit_mode = self._FIT_MODE_PAGE
         self._schedule_initial_fit()
+
+    def _pdf_start_dir(self) -> Path:
+        if self._document is not None:
+            return self._document.path.parent
+        last_file = self._settings.value("document/last_opened_file", "", str)
+        if last_file:
+            last_file_path = Path(last_file)
+            if last_file_path.exists():
+                return last_file_path.parent
+        last_dir = self._settings.value("document/last_directory", "", str)
+        if last_dir:
+            last_dir_path = Path(last_dir)
+            if last_dir_path.exists():
+                return last_dir_path
+        return Path.home()
 
     def closeEvent(self, event) -> None:  # pragma: no cover - Qt lifecycle
         if not self._confirm_discard_unsaved_changes("close the application"):
