@@ -1,0 +1,1 @@
+"""Office PDF Signer package."""
