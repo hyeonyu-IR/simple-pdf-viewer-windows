@@ -443,36 +443,44 @@ class MainWindow(QMainWindow):
         self._selection_summary.setWordWrap(True)
         self._selection_summary.setObjectName("summaryCard")
         self._summary_divider = self._make_divider(info_card)
-        self._text_value_label = QLabel("Text", info_card)
+        self._text_section = QWidget(info_card)
+        text_section_layout = QVBoxLayout(self._text_section)
+        text_section_layout.setContentsMargins(0, 0, 0, 0)
+        text_section_layout.setSpacing(6)
+        self._text_value_label = QLabel("Text", self._text_section)
         self._text_value_label.setObjectName("fieldLabel")
-        self._text_value_input = QTextEdit(info_card)
+        self._text_value_input = QTextEdit(self._text_section)
         self._text_value_input.setObjectName("textValueInput")
         self._text_value_input.setPlaceholderText("Selected text")
         self._text_value_input.setAcceptRichText(False)
         self._text_value_input.setFixedHeight(128)
         self._text_value_input.textChanged.connect(self._handle_text_value_changed)
+        text_section_layout.addWidget(self._text_value_label)
+        text_section_layout.addWidget(self._text_value_input)
         self._font_divider = self._make_divider(info_card)
-        self._font_size_label = QLabel("Font Size", info_card)
+        self._font_section = QWidget(info_card)
+        font_section_layout = QVBoxLayout(self._font_section)
+        font_section_layout.setContentsMargins(0, 0, 0, 0)
+        font_section_layout.setSpacing(6)
+        self._font_size_label = QLabel("Font Size", self._font_section)
         self._font_size_label.setObjectName("fieldLabel")
-        self._font_size_input = IntStepper(8, 72, step=1, suffix=" pt", parent=info_card)
+        self._font_size_input = IntStepper(8, 72, step=1, suffix=" pt", parent=self._font_section)
         self._font_size_input.valueChanged.connect(self._apply_font_size_change)
+        font_section_layout.addWidget(self._font_size_label)
+        font_section_layout.addWidget(self._font_size_input)
         layout.addWidget(title)
         layout.addWidget(subtitle)
         info_layout.addWidget(self._selection_hint)
         info_layout.addWidget(self._hint_divider)
         info_layout.addWidget(self._selection_summary)
         info_layout.addWidget(self._summary_divider)
-        info_layout.addWidget(self._text_value_label)
-        info_layout.addWidget(self._text_value_input)
+        info_layout.addWidget(self._text_section)
         info_layout.addWidget(self._font_divider)
-        info_layout.addWidget(self._font_size_label)
-        info_layout.addWidget(self._font_size_input)
+        info_layout.addWidget(self._font_section)
         layout.addWidget(info_card)
         layout.addStretch()
-        self._text_value_label.hide()
-        self._text_value_input.hide()
-        self._font_size_label.hide()
-        self._font_size_input.hide()
+        self._text_section.hide()
+        self._font_section.hide()
         return container
 
     def _make_panel_card(self, parent: QWidget) -> QFrame:
@@ -1197,40 +1205,34 @@ class MainWindow(QMainWindow):
         self._updating_properties = True
         if self._selected_annotation is None:
             self._selection_summary.setText("No annotation selected.")
-            self._text_value_label.hide()
-            self._text_value_input.hide()
+            self._text_section.hide()
             self._summary_divider.hide()
             self._font_divider.hide()
-            self._font_size_label.hide()
-            self._font_size_input.hide()
+            self._font_section.hide()
             self._updating_properties = False
             return
         annotation = self._selected_annotation
         if annotation.kind == "signature":
             summary = (
-                f"<b>Type:</b> Signature<br>"
-                f"<b>Page:</b> {annotation.page_index + 1}<br>"
+                f"<b>Type:</b> Signature<br><br>"
+                f"<b>Page:</b> {annotation.page_index + 1}<br><br>"
                 f"<b>Size:</b> {int(annotation.rect.width())} x {int(annotation.rect.height())}"
             )
             self._summary_divider.hide()
             self._font_divider.hide()
-            self._text_value_label.hide()
-            self._text_value_input.hide()
-            self._font_size_label.hide()
-            self._font_size_input.hide()
+            self._text_section.hide()
+            self._font_section.hide()
         else:
             summary = (
-                f"<b>Type:</b> {html.escape(annotation.kind.title())}<br>"
-                f"<b>Page:</b> {annotation.page_index + 1}<br>"
-                f"<b>Text:</b> {html.escape(annotation.text)}<br>"
+                f"<b>Type:</b> {html.escape(annotation.kind.title())}<br><br>"
+                f"<b>Page:</b> {annotation.page_index + 1}<br><br>"
+                f"<b>Text:</b> {html.escape(annotation.text)}<br><br>"
                 f"<b>Size:</b> {int(annotation.rect.width())} x {int(annotation.rect.height())}"
             )
             self._summary_divider.show()
             self._font_divider.show()
-            self._text_value_label.show()
-            self._text_value_input.show()
-            self._font_size_label.show()
-            self._font_size_input.show()
+            self._text_section.show()
+            self._font_section.show()
             self._text_value_input.setPlainText(annotation.text)
             self._font_size_input.setValue(int(round(annotation.font_size)))
         self._selection_summary.setText(summary)
