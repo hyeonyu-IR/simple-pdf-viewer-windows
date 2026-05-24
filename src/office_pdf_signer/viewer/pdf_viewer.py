@@ -162,7 +162,7 @@ class PageCanvas(QWidget):
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
             painter.drawRect(rect)
-            if annotation.kind in {"signature", "text"}:
+            if annotation.kind in {"signature", "text", "date"}:
                 handle = self._resize_handle_rect(rect)
                 painter.fillRect(handle, QColor("#2470ff"))
 
@@ -200,7 +200,7 @@ class PageCanvas(QWidget):
         )
 
     def _is_resize_handle_hit(self, annotation: Annotation, widget_pos: QPointF) -> bool:
-        if annotation.kind not in {"signature", "text"} or annotation.id != self._selected_annotation_id:
+        if annotation.kind not in {"signature", "text", "date"} or annotation.id != self._selected_annotation_id:
             return False
         return self._resize_handle_rect(self._page_to_widget_rect(annotation.rect)).contains(widget_pos)
 
@@ -214,7 +214,7 @@ class PageCanvas(QWidget):
         )
 
     def _resize_annotation(self, annotation: Annotation, widget_pos: QPointF) -> None:
-        if annotation.kind == "text":
+        if annotation.kind in {"text", "date"}:
             self._resize_text_annotation(annotation, widget_pos)
             return
         self._resize_signature_annotation(annotation, widget_pos)
