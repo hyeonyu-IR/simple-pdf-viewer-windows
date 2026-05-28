@@ -139,6 +139,7 @@ class PageCanvas(QWidget):
     def _draw_annotation(self, painter: QPainter, annotation: Annotation) -> None:
         rect = self._page_to_widget_rect(annotation.rect)
         if annotation.kind in {"text", "date"}:
+            painter.fillRect(rect, QColor("#ffffff"))
             font = QFont("Segoe UI", max(8, int(annotation.font_size * self._zoom)))
             painter.setFont(font)
             painter.setPen(QColor("#0f1720"))
@@ -150,7 +151,7 @@ class PageCanvas(QWidget):
             )
             painter.drawText(
                 text_rect,
-                Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
+                Qt.AlignLeft | Qt.AlignBottom | Qt.TextWordWrap,
                 annotation.text,
             )
         elif annotation.kind == "signature" and annotation.image is not None:
